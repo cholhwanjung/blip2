@@ -1,0 +1,19 @@
+# Ignore Python bytecode and cache
+__pycache__/
+*.py[cod]
+
+# Ignore environment directories
+venv/
+.env/
+
+# Ignore OS-specific files
+.DS_Store  # macOS
+Thumbs.db  # Windows
+
+# Ignore log files
+*.log
+
+# Ignore config files
+*.env
+
+wandb/
