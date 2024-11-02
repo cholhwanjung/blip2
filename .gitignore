@@ -18,3 +18,4 @@ Thumbs.db  # Windows
 
 wandb/
 *.pth
+.ipynb
