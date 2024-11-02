@@ -8,18 +8,22 @@ from datasets import load_dataset
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, DistributedSampler
+from torchvision import transforms
 from omegaconf import OmegaConf
 from LAVIS.lavis.models import Blip2OPT, load_model, load_preprocess, load_model_and_preprocess
+from LAVIS.lavis.models import *
+from LAVIS.lavis.processors import *
 
 from src.stage_train import forward_stage1,forward_stage2
 
 
 def collate_fn(batch):
-    batch = [b for b in batch if b["image_bytes"] is not None and b["text"] is not None]
-    images = torch.stack([vis_processor(image) for image in (b["image_bytes"] for b in batch)])
+    batch = [b for b in batch if b["image"] is not None and b["text_input"] is not None]
+    images = torch.stack([vis_processor(image) for image in (b["image"] for b in batch)])
+    # images = torch.stack([vis_processor(resize_transform(image)) for image in (b["image"] for b in batch)])
     
     # Collect text labels
-    labels = [text_processor(b["text"]) for b in batch]
+    labels = [text_processor(b["text_input"]) for b in batch]
     
     return {"image": images, "text_input": labels}
 
@@ -43,8 +47,8 @@ if __name__ == "__main__":
 
     wandb_project = "BLIP-2 Finetuning"
 
-    train_dataset_path = "/home/charles/VLM/data/crop_train_224_train.parquet"
-    validation_dataset_path = "/home/charles/VLM/data/crop_train_224_validation.parquet"
+    train_dataset_path = "./onout_product_train_384_small.parquet"
+    validation_dataset_path = "./onout_product_validation_384_small.parquet"
     model_save_dir = "./ckpt/test"
 
     batch_size = 8
@@ -56,12 +60,12 @@ if __name__ == "__main__":
 
     ## init model
     cfg = OmegaConf.load(Blip2OPT.default_config_path("pretrain_opt2.7b"))
-    from_checkpoint = False
-    checkpoint_path = "./ckpt/base_model/blip2_base.pth"
+    from_checkpoint = True
+    checkpoint_path = "./ckpt/base/blip2_model.pth"
 
     if from_checkpoint:
         model = load_model("blip2_opt", "pretrain_opt2.7b", checkpoint=checkpoint_path)
-        vis_processors, text_processors = load_preprocess(cfg)
+        vis_processors, text_processors = load_preprocess(cfg["preprocess"])
     else:
         model, vis_processors, text_processors = load_model_and_preprocess(
             name="blip2_opt", model_type="pretrain_opt2.7b",
@@ -83,10 +87,11 @@ if __name__ == "__main__":
         }
     )
     ds = ds.cast_column("image_bytes", datasets.features.Image())
+    
     train_dataset, validation_dataset = ds["train"], ds["val"]
-
-    train_dataset = train_dataset
-    validation_dataset = validation_dataset
+    
+    train_dataset = train_dataset.rename_column("image_bytes", "image").rename_column("text", "text_input")
+    validation_dataset = validation_dataset.rename_column("image_bytes", "image").rename_column("text", "text_input")
 
     train_sampler = DistributedSampler(train_dataset, shuffle=True)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, collate_fn=collate_fn)
@@ -133,7 +138,7 @@ if __name__ == "__main__":
             optimizer.step()
             total_loss += loss.item()
 
-            if (step + 1) % 5 == 0:
+            if (step + 1) % 100 == 0:
                 wandb.log({"train_loss": loss.item()})
                 print(f"Epoch [{epoch+1}/{num_epochs}], Rank [{local_rank}], Step [{step+1}/{len(train_dataloader)}], Loss: {loss.item():.4f}")
 
@@ -164,6 +169,7 @@ if __name__ == "__main__":
             best_val_loss = avg_val_loss
             epochs_no_improve = 0
             if dist.get_rank() == 0:  # Ensure only rank 0 saves the model
+                os.makedirs(os.path.join(model_save_dir, f"epoch-{epoch+1}"), exist_ok = True)
                 torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", "blip2_model.pth"))
             
         else:
