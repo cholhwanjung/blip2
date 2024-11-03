@@ -50,6 +50,7 @@ if __name__ == "__main__":
     train_dataset_path = "./onout_product_train_384_small.parquet"
     validation_dataset_path = "./onout_product_validation_384_small.parquet"
     model_save_dir = "./ckpt/test"
+    model_type = "pretrain_opt2.7b"
 
     batch_size = 8
     patience = 5
@@ -59,16 +60,16 @@ if __name__ == "__main__":
     torch.manual_seed(23)
 
     ## init model
-    cfg = OmegaConf.load(Blip2OPT.default_config_path("pretrain_opt2.7b"))
+    cfg = OmegaConf.load(Blip2OPT.default_config_path(model_type))
     from_checkpoint = True
     checkpoint_path = "./ckpt/base/blip2_model.pth"
 
     if from_checkpoint:
-        model = load_model("blip2_opt", "pretrain_opt2.7b", checkpoint=checkpoint_path)
+        model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
         vis_processors, text_processors = load_preprocess(cfg["preprocess"])
     else:
         model, vis_processors, text_processors = load_model_and_preprocess(
-            name="blip2_opt", model_type="pretrain_opt2.7b",
+            name="blip2_opt", model_type=model_type,
         )
 
     vis_processor = vis_processors["eval"]
@@ -170,7 +171,7 @@ if __name__ == "__main__":
             epochs_no_improve = 0
             if dist.get_rank() == 0:  # Ensure only rank 0 saves the model
                 os.makedirs(os.path.join(model_save_dir, f"epoch-{epoch+1}"), exist_ok = True)
-                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", "blip2_model.pth"))
+                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", f"{epoch+1}_blip2_model.pth"))
             
         else:
             epochs_no_improve += 1

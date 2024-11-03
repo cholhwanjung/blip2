@@ -19,3 +19,7 @@ Thumbs.db  # Windows
 wandb/
 *.pth
 *.ipynb
+notebooks/
+
+Pipfile
+Pipfile.lock
