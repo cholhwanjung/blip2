@@ -7,7 +7,7 @@ model:
   arch: pretrain_opt2.7b
   load_finetuned: True
 
-  pretrained: "./ckpt/base/blip2_model.pth""
+  pretrained: "./ckpt/base/blip2_model.pth"
   finetuned: "./ckpt/base/blip2_model.pth"
 
   # vit encoder
