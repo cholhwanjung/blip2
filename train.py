@@ -78,13 +78,24 @@ if __name__ == "__main__":
     from_checkpoint = True
     checkpoint_path = "./ckpt/base/blip2_model.pth"
 
-    if from_checkpoint:
-        model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
-        vis_processors, text_processors = load_preprocess(cfg["preprocess"])
-    else:
-        model, vis_processors, text_processors = load_model_and_preprocess(
-            name="blip2_opt", model_type=model_type,
-        )
+    if local_rank == 0:
+        if from_checkpoint:
+            model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
+            vis_processors, text_processors = load_preprocess(cfg["preprocess"])
+        else:
+            model, vis_processors, text_processors = load_model_and_preprocess(
+                name="blip2_opt", model_type=model_type,
+            )
+    dist.barrier()
+
+    if local_rank != 0:
+        if from_checkpoint:
+            model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
+            vis_processors, text_processors = load_preprocess(cfg["preprocess"])
+        else:
+            model, vis_processors, text_processors = load_model_and_preprocess(
+                name="blip2_opt", model_type=model_type,
+            )
 
     vis_processor = vis_processors["eval"]
     text_processor = text_processors["eval"]
