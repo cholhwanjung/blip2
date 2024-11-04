@@ -38,6 +38,18 @@ def cleanup_ddp():
     """Clean up the DDP environment."""
     dist.destroy_process_group()
 
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
+
 
 if __name__ == "__main__":
 
@@ -46,6 +58,7 @@ if __name__ == "__main__":
     os.environ["NCCL_TIMEOUT"] = "1200"
 
     wandb_project = "BLIP-2 Finetuning"
+    run_name = "test"
 
     train_dataset_path = "./onout_product_train_384_small.parquet"
     validation_dataset_path = "./onout_product_validation_384_small.parquet"
@@ -55,6 +68,7 @@ if __name__ == "__main__":
     batch_size = 8
     patience = 5
     num_epochs = 10
+    learning_rate = 1e-5
 
     local_rank = setup_ddp()
     torch.manual_seed(23)
@@ -100,7 +114,7 @@ if __name__ == "__main__":
     validation_sampler = DistributedSampler(validation_dataset, shuffle=True)
     validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, sampler=validation_sampler, collate_fn=collate_fn)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     forward_fn = forward_stage1
 
@@ -110,13 +124,16 @@ if __name__ == "__main__":
     wandb.init(
         # set the wandb project where this run will be logged
         project=wandb_project,
+        name=run_name,
 
         # track hyperparameters and run metadata
         config={
-            "learning_rate": 1e-5,
-            "architecture": "BLIP-2",
+            "model_name": model_type,
+            "learning_rate": learning_rate,
             "epochs": num_epochs,
-            "batch_size": batch_size
+            "batch_size": batch_size,
+            "model_save_dir": model_save_dir,
+            "train_dataset_path": train_dataset_path,
         },
         group="DDP",
     )
@@ -143,10 +160,15 @@ if __name__ == "__main__":
                 wandb.log({"train_loss": loss.item()})
                 print(f"Epoch [{epoch+1}/{num_epochs}], Rank [{local_rank}], Step [{step+1}/{len(train_dataloader)}], Loss: {loss.item():.4f}")
 
-
         avg_loss = total_loss / len(train_dataloader)
-        print(f"Epoch {epoch + 1}/{num_epochs}, Rank [{local_rank}], Loss: {avg_loss}")
-        wandb.log({"avg_train_loss": avg_loss})
+
+        total_loss_world = torch.tensor(total_loss, device="cuda")
+        dist.all_reduce(total_loss_world, op=dist.ReduceOp.SUM)
+        mean_loss = total_loss_world.item() / get_world_size() / len(train_dataloader)
+
+        print(f"Epoch {epoch + 1}/{num_epochs}, Rank [{local_rank}], Loss: {avg_loss}, Mean Loss: {mean_loss}")
+        wandb.log({"mean_train_loss": mean_loss})
+        wandb.log({"train_loss": avg_loss})
 
         model.eval()
         total_val_loss = 0
@@ -160,14 +182,17 @@ if __name__ == "__main__":
                 total_val_loss += loss.item()
 
         avg_val_loss = total_val_loss / len(validation_dataloader)
-        # eval_result = accuracy_metric.compute()
 
-        print(f"Epoch {epoch + 1}, Rank [{local_rank}], Validation Loss: {avg_val_loss:.4f}")
+        total_val_loss_world = torch.tensor(total_val_loss, device="cuda")
+        dist.all_reduce(total_val_loss_world, op=dist.ReduceOp.SUM)
+        mean_val_loss = total_val_loss_world.item() / get_world_size() / len(validation_dataloader)
+
+        print(f"Epoch {epoch + 1}, Rank [{local_rank}], Validation Loss: {avg_val_loss:.4f}, Mean Validation Loss: {mean_val_loss:.4f}")
+        wandb.log({"mean_validation_loss": mean_val_loss})
         wandb.log({"validation_loss": avg_val_loss})
-        # wandb.log({"validation_accuracy": eval_result["accuracy"]})
 
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        if mean_val_loss < best_val_loss:
+            best_val_loss = mean_val_loss
             epochs_no_improve = 0
             if dist.get_rank() == 0:  # Ensure only rank 0 saves the model
                 os.makedirs(os.path.join(model_save_dir, f"epoch-{epoch+1}"), exist_ok = True)
