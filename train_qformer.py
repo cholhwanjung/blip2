@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, DistributedSampler
 from torchvision import transforms
 from omegaconf import OmegaConf
-from LAVIS.lavis.models import Blip2OPT, load_model, load_preprocess, load_model_and_preprocess
+from LAVIS.lavis.models import Blip2Qformer, load_model, load_preprocess, load_model_and_preprocess
 from LAVIS.lavis.models import *
 from LAVIS.lavis.processors import *
 
@@ -60,8 +60,6 @@ if __name__ == "__main__":
     wandb_project = "BLIP-2 Finetuning"
     run_name = "test"
 
-    # train_dataset_path = "/home/charles/VLM/data/onout_product_train_384_small.parquet"
-    # validation_dataset_path = "/home/charles/VLM/data/onout_product_validation_384_small.parquet"
     train_dataset_path = "./onout_product_train_384_small.parquet"
     validation_dataset_path = "./onout_product_validation_384_small.parquet"
     model_save_dir = "./ckpt/test"
@@ -209,7 +207,7 @@ if __name__ == "__main__":
             epochs_no_improve = 0
             if dist.get_rank() == 0:  # Ensure only rank 0 saves the model
                 os.makedirs(os.path.join(model_save_dir, f"epoch-{epoch+1}"), exist_ok = True)
-                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", f"{epoch+1}_blip2_model_v2.pth"))
+                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", f"{epoch+1}_blip2_model.pth"))
             
         else:
             epochs_no_improve += 1
