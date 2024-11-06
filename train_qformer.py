@@ -57,13 +57,15 @@ if __name__ == "__main__":
     os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "1"
     os.environ["NCCL_TIMEOUT"] = "1200"
 
-    wandb_project = "BLIP-2 Finetuning"
+    wandb_project = "BLIP-2 Q Finetuning"
     run_name = "test"
 
-    train_dataset_path = "./onout_product_train_384_small.parquet"
-    validation_dataset_path = "./onout_product_validation_384_small.parquet"
+    train_dataset_path = "/home/charles/VLM/data/onout_product_train_384_small.parquet"
+    validation_dataset_path = "/home/charles/VLM/data/onout_product_validation_384_small.parquet"
+    # train_dataset_path = "./onout_product_train_384_small.parquet"
+    # validation_dataset_path = "./onout_product_validation_384_small.parquet"
     model_save_dir = "./ckpt/test"
-    model_type = "pretrain_opt2.7b"
+    model_type = "pretrain"
 
     batch_size = 8
     patience = 5
@@ -74,27 +76,27 @@ if __name__ == "__main__":
     torch.manual_seed(23)
 
     ## init model
-    cfg = OmegaConf.load(Blip2OPT.default_config_path(model_type))
+    cfg = OmegaConf.load(Blip2Qformer.default_config_path(model_type))
     from_checkpoint = True
-    checkpoint_path = "./ckpt/base/blip2_model.pth"
+    checkpoint_path = "./ckpt/base/blip2_qmodel.pth"
 
     if local_rank == 0:
         if from_checkpoint:
-            model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
+            model = load_model("blip2", model_type, checkpoint=checkpoint_path)
             vis_processors, text_processors = load_preprocess(cfg["preprocess"])
         else:
             model, vis_processors, text_processors = load_model_and_preprocess(
-                name="blip2_opt", model_type=model_type,
+                name="blip2", model_type=model_type,
             )
     dist.barrier()
 
     if local_rank != 0:
         if from_checkpoint:
-            model = load_model("blip2_opt", model_type, checkpoint=checkpoint_path)
+            model = load_model("blip2", model_type, checkpoint=checkpoint_path)
             vis_processors, text_processors = load_preprocess(cfg["preprocess"])
         else:
             model, vis_processors, text_processors = load_model_and_preprocess(
-                name="blip2_opt", model_type=model_type,
+                name="blip2", model_type=model_type,
             )
 
     vis_processor = vis_processors["eval"]
@@ -127,7 +129,7 @@ if __name__ == "__main__":
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
-    forward_fn = forward_stage2
+    forward_fn = forward_stage1
 
     best_val_loss = float("inf")
     epochs_no_improve = 0
@@ -167,7 +169,7 @@ if __name__ == "__main__":
             optimizer.step()
             total_loss += loss.item()
 
-            if (step + 1) % 100 == 0:
+            if (step + 1) % 5 == 0:
                 wandb.log({"train_loss": loss.item()})
                 print(f"Epoch [{epoch+1}/{num_epochs}], Rank [{local_rank}], Step [{step+1}/{len(train_dataloader)}], Loss: {loss.item():.4f}")
 
@@ -207,7 +209,7 @@ if __name__ == "__main__":
             epochs_no_improve = 0
             if dist.get_rank() == 0:  # Ensure only rank 0 saves the model
                 os.makedirs(os.path.join(model_save_dir, f"epoch-{epoch+1}"), exist_ok = True)
-                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", f"{epoch+1}_blip2_model.pth"))
+                torch.save(model.state_dict(), os.path.join(model_save_dir, f"epoch-{epoch+1}", f"{epoch+1}_blip2_qmodel.pth"))
             
         else:
             epochs_no_improve += 1
