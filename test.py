@@ -17,7 +17,7 @@ from LAVIS.lavis.processors import *
 def chunk_images(image_list, batch_size):
     """Split the image list into chunks of a given batch size."""
     for i in range(0, len(image_list), batch_size):
-        return image_list[i:i + batch_size]
+        yield image_list[i:i + batch_size]
 
 def generate_captions_in_batches(images, vis_processor, model, device, batch_size):
     all_captions = []
@@ -37,7 +37,7 @@ def generate_captions_in_batches(images, vis_processor, model, device, batch_siz
     return all_captions
 
 def main(args):
-    batch_size = 16
+    batch_size = 48
     model_type = "pretrain_opt2.7b"
     checkpoint_path = "./ckpt/base/blip2_model.pth"
     test_data_path = "./facad_test_data.parquet"
@@ -83,6 +83,8 @@ def main(args):
     # METEOR
     meteor_score = meteor.compute(predictions=predictions, references=references)
     print("METEOR:", meteor_score["meteor"])
+
+    print(f"finished testing checkpoint: {checkpoint_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate model with specific GPU")
